@@ -3,8 +3,9 @@ import mapboxgl from 'mapbox-gl';
 import Papa from 'papaparse';
 import { featureCollection, point } from '@turf/helpers';
 import centroid from '@turf/centroid';
-import MapConfig from './MapConfig';
 import 'mapbox-gl/dist/mapbox-gl.css';
+
+import MapConfig from './MapConfig';
 
 class Map extends Component {
 
@@ -12,9 +13,10 @@ class Map extends Component {
     super(props);
 
     this.state = {
+      active: null,
       lat: 40.7831,
       lng: -73.9712,
-      stores: [],
+      shops: [],
       zoom: 9
     };
   }
@@ -30,28 +32,24 @@ class Map extends Component {
     });
   }
 
-  // createPopupContent(store) {
-  //   return `<strong></strong>
-  //   <br />
-  //   <a href="tel:${store['Phone Number']}">${store['Phone Number']}</a>`;
-  // }
-
   onParse(res) {
-    const features = res.data.map((store) => {
+    const features = res.data.map((shop) => {
+      console.log('shop', shop);
       const properties = {
-        // popupContent: this.createPopupContent(store),
         icon: 'cafe',
-        title: store.Name
+        name: shop.Name,
+        address: shop['Street Combined'],
+        phone: shop['Phone Number']
       };
 
-      return point([store.Longitude, store.Latitude], properties);
+      return point([shop.Longitude, shop.Latitude], properties);
     });
 
     const data = featureCollection(features);
     const mapCenter = centroid(data).geometry.coordinates;
 
     this.setState({
-      stores: {
+      shops: {
         type: 'geojson',
         data
       },
@@ -60,44 +58,53 @@ class Map extends Component {
     });
   }
 
-  getStoreInfo() {
-    Papa.parse(MapConfig.pointsUrl, {
-      complete: this.onParse.bind(this),
-      download: true,
-      dynamicTyping: true,
-      header: true,
-      skipEmptyLines: true
-    });
+  onError() {
+    throw new Error('Something went wrong while parsing the CVS');
   }
 
-  // handlePopup() {
-  //   const layerName = 'stores';
-  //   const popup = new mapboxgl.Popup({
-  //     closeButton: false,
-  //     closeOnClick: false
-  //   });
-  //
-  //   this.map.on('mouseenter', layerName, (e) => {
-  //     this.map.getCanvas().style.cursor = 'pointer';
-  //
-  //     const feature = e.features[0];
-  //     let coordinates = feature.geometry.coordinates.slice();
-  //     const description = feature.properties.popupContent;
-  //
-  //     while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
-  //       coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
-  //     }
-  //
-  //     popup.setLngLat(coordinates)
-  //       .setHTML(description)
-  //       .addTo(this.map);
-  //   });
-  //
-  //   this.map.on('mouseleave', layerName, (e) => {
-  //     this.map.getCanvas().style.cursor = '';
-  //     popup.remove();
-  //   });
-  // }
+  getShopInfo() {
+    return new Promise((resolve) => {
+      Papa.parse(MapConfig.pointsUrl, {
+        complete: this.onParse.bind(this),
+        error: this.onError,
+        download: true,
+        dynamicTyping: true,
+        header: true,
+        skipEmptyLines: true
+      });
+    })
+  }
+
+  addShopLayer() {
+    const layerName = 'shops';
+
+    this.map.addLayer({
+      id: layerName,
+      type: 'symbol',
+      source: this.state.shops,
+      layout: {
+        'icon-image': '{icon}-15',
+        'icon-allow-overlap': true,
+        'text-field': '{name}',
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-size': 10,
+        'text-offset': [0, 0.6],
+        'text-anchor': 'top'
+      }
+    });
+
+    this.map.on('mouseenter', layerName, (e) => {
+      console.log('e', e);
+      this.map.getCanvas().style.cursor = 'pointer';
+      this.setState({
+        active: e.features[0]
+      });
+    });
+
+    this.map.on('mouseleave', layerName, () => {
+      this.map.getCanvas().style.cursor = '';
+    });
+  }
 
   onMapLoad() {
     this.map.on('load', () => {
@@ -106,33 +113,21 @@ class Map extends Component {
         zoom: 15
       });
 
-      this.map.addLayer({
-        id: 'stores',
-        type: 'symbol',
-        source: this.state.stores,
-        layout: {
-          'icon-image': '{icon}-15',
-          'icon-allow-overlap': true,
-          'text-field': '{title}',
-          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
-          'text-size': 10,
-          'text-offset': [0, 0.6],
-          'text-anchor': 'top'
-        }
-      });
-
-      // this.handlePopup();
+      this.addShopLayer();
     });
+  }
+
+  setupMap() {
+    const config = this.getConfig();
+    mapboxgl.accessToken = MapConfig.token;
+    this.map = new mapboxgl.Map(config);
+    this.map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
   }
 
   /* Lifecycle Methods */
   componentDidMount() {
-    const config = this.getConfig();
-    this.getStoreInfo();
-
-    mapboxgl.accessToken = MapConfig.token;
-    this.map = new mapboxgl.Map(config);
-    this.map.addControl(new mapboxgl.NavigationControl());
+    this.getShopInfo();
+    this.setupMap();
     this.onMapLoad();
   }
 
@@ -141,14 +136,52 @@ class Map extends Component {
   }
 
   render() {
-    const style = {
+    const mapStyle = {
+      bottom: 0,
       position: 'absolute',
       top: 0,
-      bottom: 0,
       width: '100%'
     };
 
-    return <div style={style} ref={el => this.mapContainer = el} />;
+    const infoStyle = {
+      backgroundColor: '#fff',
+      border: '1px solid black',
+      borderRadius: '5px',
+      height: '10%',
+      left: 50,
+      padding: '10px',
+      position: 'absolute',
+      textAlign: 'left',
+      top: 50,
+      width: '10%'
+    };
+
+    const addressStyle = {
+      fontStyle: 'normal'
+    };
+
+    const contentStyle = {
+      fontSize: '12px',
+      margin: '8px 0'
+    }
+
+    const activeShop = this.state.active;
+    const activeProps = activeShop ? this.state.active.properties : undefined;
+    const activeDiv = activeProps ? (
+      <div style={infoStyle}>
+        <address style={addressStyle}>
+          <p style={contentStyle}>{activeProps.address}</p>
+          <a style={contentStyle} href="tel:{activeProps.phone}">{activeProps.phone}</a>
+        </address>
+      </div>
+    ) : (<div style={infoStyle}>
+        <p style={contentStyle}>Hover on a store to view its information.</p>
+      </div>);
+
+    return <main>
+      <div style={mapStyle} ref={el => this.mapContainer = el} />
+      {activeDiv}
+    </main>;
   }
 }
 
