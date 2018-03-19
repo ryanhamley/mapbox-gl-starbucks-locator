@@ -34,7 +34,6 @@ class Map extends Component {
 
   onParse(res) {
     const features = res.data.map((shop) => {
-      console.log('shop', shop);
       const properties = {
         icon: 'cafe',
         name: shop.Name,
@@ -59,20 +58,18 @@ class Map extends Component {
   }
 
   onError() {
-    throw new Error('Something went wrong while parsing the CVS');
+    throw new Error('Something went wrong while parsing the CSV');
   }
 
   getShopInfo() {
-    return new Promise((resolve) => {
-      Papa.parse(MapConfig.pointsUrl, {
-        complete: this.onParse.bind(this),
-        error: this.onError,
-        download: true,
-        dynamicTyping: true,
-        header: true,
-        skipEmptyLines: true
-      });
-    })
+    Papa.parse(MapConfig.pointsUrl, {
+      complete: this.onParse.bind(this),
+      error: this.onError,
+      download: true,
+      dynamicTyping: true,
+      header: true,
+      skipEmptyLines: true
+    });
   }
 
   addShopLayer() {
@@ -94,7 +91,6 @@ class Map extends Component {
     });
 
     this.map.on('mouseenter', layerName, (e) => {
-      console.log('e', e);
       this.map.getCanvas().style.cursor = 'pointer';
       this.setState({
         active: e.features[0]
@@ -166,7 +162,7 @@ class Map extends Component {
     }
 
     const activeShop = this.state.active;
-    const activeProps = activeShop ? this.state.active.properties : undefined;
+    const activeProps = activeShop ? activeShop.properties : undefined;
     const activeDiv = activeProps ? (
       <div style={infoStyle}>
         <address style={addressStyle}>
